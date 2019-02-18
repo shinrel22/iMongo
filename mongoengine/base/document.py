@@ -2,7 +2,9 @@ import copy
 import numbers
 from functools import partial
 
-from bson import DBRef, ObjectId, SON, json_util
+from bson import ObjectId, json_util
+from bson.dbref import DBRef
+from bson.son import SON
 import pymongo
 import six
 
@@ -39,6 +41,7 @@ class BaseDocument(object):
         :param __auto_convert: Try and will cast python objects to Object types
         :param values: A dictionary of values for the document
         """
+        print('here 2', args, values)
         self._initialised = False
         self._created = True
         if args:
@@ -68,7 +71,7 @@ class BaseDocument(object):
         # if so raise an Exception.
         if not self._dynamic and (self._meta.get('strict', True) or _created):
             _undefined_fields = set(values.keys()) - set(
-                self._fields.keys() + ['id', 'pk', '_cls', '_text_score'])
+                list(self._fields.keys()) + ['id', 'pk', '_cls', '_text_score'])
             if _undefined_fields:
                 msg = (
                     'The fields "{0}" do not exist on the document "{1}"'
@@ -83,7 +86,7 @@ class BaseDocument(object):
         self._dynamic_fields = SON()
 
         # Assign default values to instance
-        for key, field in self._fields.iteritems():
+        for key, field in self._fields.items():
             if self._db_field_map.get(key, key) in __only_fields:
                 continue
             value = getattr(self, key, None)
@@ -95,14 +98,14 @@ class BaseDocument(object):
         # Set passed values after initialisation
         if self._dynamic:
             dynamic_data = {}
-            for key, value in values.iteritems():
+            for key, value in values.items():
                 if key in self._fields or key == '_id':
                     setattr(self, key, value)
                 else:
                     dynamic_data[key] = value
         else:
             FileField = _import_class('FileField')
-            for key, value in values.iteritems():
+            for key, value in values.items():
                 key = self._reverse_db_field_map.get(key, key)
                 if key in self._fields or key in ('id', 'pk', '_cls'):
                     if __auto_convert and value is not None:
@@ -118,7 +121,7 @@ class BaseDocument(object):
 
         if self._dynamic:
             self._dynamic_lock = False
-            for key, value in dynamic_data.iteritems():
+            for key, value in dynamic_data.items():
                 setattr(self, key, value)
 
         # Flag initialised
@@ -205,7 +208,7 @@ class BaseDocument(object):
                 setattr(self, '_fields_ordered', _super_fields_ordered)
 
         dynamic_fields = data.get('_dynamic_fields') or SON()
-        for k in dynamic_fields.keys():
+        for k in list(dynamic_fields.keys()):
             setattr(self, k, data['_data'].get(k))
 
     def __iter__(self):
@@ -427,7 +430,7 @@ class BaseDocument(object):
         if is_dict:
             value = {
                 k: self.__expand_dynamic_values(k, v)
-                for k, v in value.items()
+                for k, v in list(value.items())
             }
         else:
             value = [self.__expand_dynamic_values(name, v) for v in value]
@@ -513,7 +516,7 @@ class BaseDocument(object):
         if not hasattr(data, 'items'):
             iterator = enumerate(data)
         else:
-            iterator = data.iteritems()
+            iterator = iter(data.items())
 
         for index_or_key, value in iterator:
             item_key = '%s%s.' % (base_key, index_or_key)
@@ -606,7 +609,7 @@ class BaseDocument(object):
                 del set_data['_id']
 
         # Determine if any changed items were actually unset.
-        for path, value in set_data.items():
+        for path, value in list(set_data.items()):
             if value or isinstance(value, (numbers.Number, bool)):  # Account for 0 and True that are truthy
                 continue
 
@@ -678,7 +681,7 @@ class BaseDocument(object):
         # Convert SON to a data dict, making sure each key is a string and
         # corresponds to the right db field.
         data = {}
-        for key, value in son.iteritems():
+        for key, value in son.items():
             key = str(key)
             key = cls._db_field_map.get(key, key)
             data[key] = value
@@ -694,7 +697,7 @@ class BaseDocument(object):
         if not _auto_dereference:
             fields = copy.deepcopy(fields)
 
-        for field_name, field in fields.iteritems():
+        for field_name, field in fields.items():
             field._auto_dereference = _auto_dereference
             if field.db_field in data:
                 value = data[field.db_field]
@@ -708,14 +711,14 @@ class BaseDocument(object):
 
         if errors_dict:
             errors = '\n'.join(['%s - %s' % (k, v)
-                                for k, v in errors_dict.items()])
+                                for k, v in list(errors_dict.items())])
             msg = ('Invalid data to create a `%s` instance.\n%s'
                    % (cls._class_name, errors))
             raise InvalidDocumentError(msg)
 
         # In STRICT documents, remove any keys that aren't in cls._fields
         if cls.STRICT:
-            data = {k: v for k, v in data.iteritems() if k in cls._fields}
+            data = {k: v for k, v in data.items() if k in cls._fields}
 
         obj = cls(__auto_convert=False, _created=created, __only_fields=only_fields, **data)
         obj._changed_fields = changed_fields
@@ -845,7 +848,7 @@ class BaseDocument(object):
     def _unique_with_indexes(cls, namespace=''):
         """Find unique indexes in the document schema and return them."""
         unique_indexes = []
-        for field_name, field in cls._fields.items():
+        for field_name, field in list(cls._fields.items()):
             sparse = field.sparse
 
             # Generate a list of indexes needed by uniqueness constraints
@@ -907,7 +910,7 @@ class BaseDocument(object):
         geo_field_types = tuple([_import_class(field)
                                  for field in geo_field_type_names])
 
-        for field in cls._fields.values():
+        for field in list(cls._fields.values()):
             if not isinstance(field, geo_field_types):
                 continue
 
@@ -1067,7 +1070,7 @@ class BaseDocument(object):
         """For each field that specifies choices, create a
         get_<field>_display method.
         """
-        fields_with_choices = [(n, f) for n, f in self._fields.items()
+        fields_with_choices = [(n, f) for n, f in list(self._fields.items())
                                if f.choices]
         for attr_name, field in fields_with_choices:
             setattr(self,

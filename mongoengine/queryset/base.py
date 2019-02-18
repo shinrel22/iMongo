@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import copy
 import itertools
@@ -188,7 +188,7 @@ class BaseQuerySet(object):
                 )
 
             if queryset._as_pymongo:
-                return queryset._cursor[key]
+                return queryset._get_as_pymongo(queryset._cursor[key])
 
             return queryset._document._from_son(
                 queryset._cursor[key],
@@ -215,7 +215,7 @@ class BaseQuerySet(object):
     # Core functions
 
     def all(self):
-        """Returns a copy of the current QuerySet."""
+        """Returns all documents."""
         return self.__call__()
 
     def filter(self, *q_objs, **query):
@@ -277,7 +277,7 @@ class BaseQuerySet(object):
         # If we were able to retrieve the 2nd doc, rewind the cursor and
         # raise the MultipleObjectsReturned exception.
         queryset.rewind()
-        message = u'%d items returned, instead of 1' % queryset.count()
+        message = '%d items returned, instead of 1' % queryset.count()
         raise queryset._document.MultipleObjectsReturned(message)
 
     def create(self, **kwargs):
@@ -361,14 +361,14 @@ class BaseQuerySet(object):
         except pymongo.errors.BulkWriteError as err:
             # inserting documents that already have an _id field will
             # give huge performance debt or raise
-            message = u'Document must not have _id value before bulk write (%s)'
+            message = 'Document must not have _id value before bulk write (%s)'
             raise NotUniqueError(message % six.text_type(err))
         except pymongo.errors.OperationFailure as err:
             message = 'Could not save document (%s)'
             if re.match('^E1100[01] duplicate key', six.text_type(err)):
                 # E11000 - duplicate key error index
                 # E11001 - duplicate key on update
-                message = u'Tried to save duplicate unique keys (%s)'
+                message = 'Tried to save duplicate unique keys (%s)'
                 raise NotUniqueError(message % six.text_type(err))
             raise OperationError(message % six.text_type(err))
 
@@ -396,9 +396,7 @@ class BaseQuerySet(object):
         """
         if self._limit == 0 and with_limit_and_skip is False or self._none:
             return 0
-        count = self._cursor.count(with_limit_and_skip=with_limit_and_skip)
-        self._cursor_obj = None
-        return count
+        return self._cursor.count(with_limit_and_skip=with_limit_and_skip)
 
     def delete(self, write_concern=None, _from_doc_delete=False,
                cascade_refs=None):
@@ -533,12 +531,12 @@ class BaseQuerySet(object):
             elif result.raw_result:
                 return result.raw_result['n']
         except pymongo.errors.DuplicateKeyError as err:
-            raise NotUniqueError(u'Update failed (%s)' % six.text_type(err))
+            raise NotUniqueError('Update failed (%s)' % six.text_type(err))
         except pymongo.errors.OperationFailure as err:
-            if six.text_type(err) == u'multi not coded yet':
-                message = u'update() method requires MongoDB 1.1.3+'
+            if six.text_type(err) == 'multi not coded yet':
+                message = 'update() method requires MongoDB 1.1.3+'
                 raise OperationError(message)
-            raise OperationError(u'Update failed (%s)' % six.text_type(err))
+            raise OperationError('Update failed (%s)' % six.text_type(err))
 
     def upsert_one(self, write_concern=None, **update):
         """Overwrite or add the first document matched by the query.
@@ -643,9 +641,9 @@ class BaseQuerySet(object):
                     query, update, upsert=upsert, sort=sort, remove=remove, new=new,
                     full_response=full_response, **self._cursor_args)
         except pymongo.errors.DuplicateKeyError as err:
-            raise NotUniqueError(u'Update failed (%s)' % err)
+            raise NotUniqueError('Update failed (%s)' % err)
         except pymongo.errors.OperationFailure as err:
-            raise OperationError(u'Update failed (%s)' % err)
+            raise OperationError('Update failed (%s)' % err)
 
         if full_response:
             if result['value'] is not None:
@@ -690,7 +688,7 @@ class BaseQuerySet(object):
                     self._document._from_son(doc, only_fields=self.only_fields))
         elif self._as_pymongo:
             for doc in docs:
-                doc_map[doc['_id']] = doc
+                doc_map[doc['_id']] = self._get_as_pymongo(doc)
         else:
             for doc in docs:
                 doc_map[doc['_id']] = self._document._from_son(
@@ -915,7 +913,7 @@ class BaseQuerySet(object):
         .. versionchanged:: 0.5 - Added subfield support
         """
         fields = {f: QueryFieldList.ONLY for f in fields}
-        self.only_fields = fields.keys()
+        self.only_fields = list(fields.keys())
         return self.fields(True, **fields)
 
     def exclude(self, *fields):
@@ -965,7 +963,7 @@ class BaseQuerySet(object):
         # Check for an operator and transform to mongo-style if there is
         operators = ['slice']
         cleaned_fields = []
-        for key, value in kwargs.items():
+        for key, value in list(kwargs.items()):
             parts = key.split('__')
             if parts[0] in operators:
                 op = parts.pop(0)
@@ -1486,7 +1484,7 @@ class BaseQuerySet(object):
         raw_doc = six.next(self._cursor)
 
         if self._as_pymongo:
-            return raw_doc
+            return self._get_as_pymongo(raw_doc)
 
         doc = self._document._from_son(
             raw_doc, _auto_dereference=self._auto_dereference,
@@ -1679,7 +1677,7 @@ class BaseQuerySet(object):
         if normalize:
             count = sum(frequencies.values())
             frequencies = {k: float(v) / count
-                           for k, v in frequencies.items()}
+                           for k, v in list(frequencies.items())}
 
         return frequencies
 
@@ -1731,13 +1729,13 @@ class BaseQuerySet(object):
             }
         """
         total, data, types = self.exec_js(freq_func, field)
-        values = {types.get(k): int(v) for k, v in data.iteritems()}
+        values = {types.get(k): int(v) for k, v in data.items()}
 
         if normalize:
-            values = {k: float(v) / total for k, v in values.items()}
+            values = {k: float(v) / total for k, v in list(values.items())}
 
         frequencies = {}
-        for k, v in values.iteritems():
+        for k, v in values.items():
             if isinstance(k, float):
                 if int(k) == k:
                     k = int(k)
@@ -1833,6 +1831,26 @@ class BaseQuerySet(object):
 
         return tuple(data)
 
+    def _get_as_pymongo(self, doc):
+        """Clean up a PyMongo doc, removing fields that were only fetched
+        for the sake of MongoEngine's implementation, and return it.
+        """
+        # Always remove _cls as a MongoEngine's implementation detail.
+        if '_cls' in doc:
+            del doc['_cls']
+
+        # If the _id was not included in a .only or was excluded in a .exclude,
+        # remove it from the doc (we always fetch it so that we can properly
+        # construct documents).
+        fields = self._loaded_fields
+        if fields and '_id' in doc and (
+            (fields.value == QueryFieldList.ONLY and '_id' not in fields.fields) or
+            (fields.value == QueryFieldList.EXCLUDE and '_id' in fields.fields)
+        ):
+            del doc['_id']
+
+        return doc
+
     def _sub_js_fields(self, code):
         """When fields are specified with [~fieldname] syntax, where
         *fieldname* is the Python name of a field, *fieldname* will be
@@ -1845,7 +1863,7 @@ class BaseQuerySet(object):
             field_name = match.group(1).split('.')
             fields = self._document._lookup_field(field_name)
             # Substitute the correct name for the field into the javascript
-            return u'["%s"]' % fields[-1].db_field
+            return '["%s"]' % fields[-1].db_field
 
         def field_path_sub(match):
             # Extract just the field name, and look up the field objects

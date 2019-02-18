@@ -401,14 +401,14 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
                 self.cascade_save(**kwargs)
 
         except pymongo.errors.DuplicateKeyError as err:
-            message = u'Tried to save duplicate unique keys (%s)'
+            message = 'Tried to save duplicate unique keys (%s)'
             raise NotUniqueError(message % six.text_type(err))
         except pymongo.errors.OperationFailure as err:
             message = 'Could not save document (%s)'
             if re.match('^E1100[01] duplicate key', six.text_type(err)):
                 # E11000 - duplicate key error index
                 # E11001 - duplicate key on update
-                message = u'Tried to save duplicate unique keys (%s)'
+                message = 'Tried to save duplicate unique keys (%s)'
                 raise NotUniqueError(message % six.text_type(err))
             raise OperationError(message % six.text_type(err))
 
@@ -523,7 +523,7 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
         ReferenceField = _import_class('ReferenceField')
         GenericReferenceField = _import_class('GenericReferenceField')
 
-        for name, cls in self._fields.items():
+        for name, cls in list(self._fields.items()):
             if not isinstance(cls, (ReferenceField,
                                     GenericReferenceField)):
                 continue
@@ -607,7 +607,7 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
 
         # Delete FileFields separately
         FileField = _import_class('FileField')
-        for name, field in self._fields.iteritems():
+        for name, field in self._fields.items():
             if isinstance(field, FileField):
                 getattr(self, name).delete()
 
@@ -615,7 +615,7 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
             self._qs.filter(
                 **self._object_key).delete(write_concern=write_concern, _from_doc_delete=True)
         except pymongo.errors.OperationFailure as err:
-            message = u'Could not delete document (%s)' % err.message
+            message = 'Could not delete document (%s)' % err.message
             raise OperationError(message)
         signals.post_delete.send(self.__class__, document=self, **signal_kwargs)
 
@@ -742,7 +742,7 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
         correct instance is linked to self.
         """
         if isinstance(value, BaseDict):
-            value = [(k, self._reload(k, v)) for k, v in value.items()]
+            value = [(k, self._reload(k, v)) for k, v in list(value.items())]
             value = BaseDict(value, self, key)
         elif isinstance(value, EmbeddedDocumentList):
             value = [self._reload(key, v) for v in value]
@@ -965,10 +965,10 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
                     indexes.append(index)
 
         # finish up by appending { '_id': 1 } and { '_cls': 1 }, if needed
-        if [(u'_id', 1)] not in indexes:
-            indexes.append([(u'_id', 1)])
+        if [('_id', 1)] not in indexes:
+            indexes.append([('_id', 1)])
         if cls._meta.get('index_cls', True) and cls._meta.get('allow_inheritance'):
-            indexes.append([(u'_cls', 1)])
+            indexes.append([('_cls', 1)])
 
         return indexes
 
@@ -981,10 +981,10 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
         required = cls.list_indexes()
 
         existing = []
-        for info in cls._get_collection().index_information().values():
+        for info in list(cls._get_collection().index_information().values()):
             if '_fts' in info['key'][0]:
                 index_type = info['key'][0][1]
-                text_index_fields = info.get('weights').keys()
+                text_index_fields = list(info.get('weights').keys())
                 existing.append(
                     [(key, index_type) for key in text_index_fields])
             else:
@@ -993,14 +993,14 @@ class Document(six.with_metaclass(TopLevelDocumentMetaclass, BaseDocument)):
         extra = [index for index in existing if index not in required]
 
         # if { _cls: 1 } is missing, make sure it's *really* necessary
-        if [(u'_cls', 1)] in missing:
+        if [('_cls', 1)] in missing:
             cls_obsolete = False
             for index in existing:
                 if includes_cls(index) and index not in extra:
                     cls_obsolete = True
                     break
             if cls_obsolete:
-                missing.remove([(u'_cls', 1)])
+                missing.remove([('_cls', 1)])
 
         return {'missing': missing, 'extra': extra}
 
